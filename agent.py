@@ -5,15 +5,40 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
-from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
 
 
 load_dotenv()
 
 
-#-------------------------------------1. Agent State-----------------------------------------------------
+# -----------------------------
+# 1. Config helpers
+# -----------------------------
 
+def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Works locally with .env and on Streamlit Cloud with st.secrets.
+    """
+    value = os.getenv(key)
+
+    if value:
+        return value
+
+    try:
+        import streamlit as st
+
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+
+    return default
+
+
+# -----------------------------
+# 2. Agent State
+# -----------------------------
 
 class NewsletterState(TypedDict):
     goal: str
@@ -35,37 +60,53 @@ class NewsletterState(TypedDict):
 
     error: Optional[str]
 
-#-------------------------------------2. Ollama Local LLM Setup-----------------------------------------------------
 
+# -----------------------------
+# 3. Groq LLM Setup
+# -----------------------------
 
-def get_ollama_llm():
+def get_groq_llm():
     """
-    Creates local Ollama LLM client.
-    Make sure Ollama is running and the model is pulled.
+    Creates Groq cloud LLM client.
+    This works on Streamlit Cloud.
     """
 
-    model_name = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    groq_api_key = get_secret("GROQ_API_KEY")
+    groq_model = get_secret("GROQ_MODEL", "llama-3.1-8b-instant")
 
-    llm = ChatOllama(
-        model=model_name,
-        temperature=0.4
+    if not groq_api_key:
+        raise ValueError(
+            "GROQ_API_KEY is missing. Add it to .env locally or Streamlit secrets in deployment."
+        )
+
+    llm = ChatGroq(
+        api_key=groq_api_key,
+        model=groq_model,
+        temperature=0.4,
+        max_tokens=1400
     )
 
     return llm
 
 
-llm = get_ollama_llm()
+llm = get_groq_llm()
 
-#-------------------------------------3. Tavily Search Tool-----------------------------------------------------
+
+# -----------------------------
+# 4. Tavily Search Tool
+# -----------------------------
 
 def get_search_tool():
-    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    tavily_api_key = get_secret("TAVILY_API_KEY")
 
     if not tavily_api_key:
-        raise ValueError("TAVILY_API_KEY is missing. Add it to your .env file.")
+        raise ValueError(
+            "TAVILY_API_KEY is missing. Add it to .env locally or Streamlit secrets in deployment."
+        )
 
     search_tool = TavilySearch(
-        max_results=10,
+        tavily_api_key=tavily_api_key,
+        max_results=8,
         topic="news",
         include_answer=False,
         include_raw_content=False
@@ -76,12 +117,14 @@ def get_search_tool():
 
 search_tool = get_search_tool()
 
-#-------------------------------------4. Helper LLM Function-----------------------------------------------------
 
-def call_llm(prompt: str, retries: int = 2) -> str:
+# -----------------------------
+# 5. Helper Functions
+# -----------------------------
+
+def call_llm(prompt: str, retries: int = 3) -> str:
     """
-    Calls local Ollama model.
-    Retry is added in case local Ollama server is temporarily unavailable.
+    Calls Groq LLM with simple retry handling.
     """
 
     for attempt in range(retries):
@@ -90,77 +133,73 @@ def call_llm(prompt: str, retries: int = 2) -> str:
             return response.content
 
         except Exception as e:
-            error_message = str(e)
+            message = str(e)
 
-            if "connection" in error_message.lower() or "refused" in error_message.lower():
-                wait_time = 3 * (attempt + 1)
-                print(f"Ollama connection issue. Retrying in {wait_time} seconds...")
+            if "rate" in message.lower() or "timeout" in message.lower() or "temporarily" in message.lower():
+                wait_time = 5 * (attempt + 1)
+                print(f"LLM temporarily unavailable or rate-limited. Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
                 raise e
 
-    raise RuntimeError(
-        "Ollama failed. Make sure Ollama is installed and running. "
-        "Also run: ollama pull llama3.2:3b"
-    )
+    raise RuntimeError("LLM failed after multiple retry attempts.")
 
 
 def clean_html_output(text: str) -> str:
     """
-    Removes extra chatbot-style text before/after HTML.
+    Removes extra chatbot-style text and markdown fences before saving HTML.
     """
 
     text = text.strip()
-
-    # Remove markdown code fences if model adds them
     text = text.replace("```html", "").replace("```", "").strip()
 
-    # Find where actual HTML starts
-    html_start_positions = [
+    possible_starts = [
         text.find("<!DOCTYPE"),
         text.find("<html"),
         text.find("<body"),
         text.find("<div")
     ]
 
-    valid_positions = [pos for pos in html_start_positions if pos != -1]
+    valid_starts = [pos for pos in possible_starts if pos != -1]
 
-    if valid_positions:
-        start = min(valid_positions)
-        text = text[start:]
+    if valid_starts:
+        text = text[min(valid_starts):]
 
     return text.strip()
-#-------------------------------------5. Graph Nodes-----------------------------------------------------
+
+
+# -----------------------------
+# 6. Graph Nodes
+# -----------------------------
 
 def planning_node(state: NewsletterState) -> NewsletterState:
-    """
-    Step 1: Agent creates a plan.
-    """
-
     prompt = f"""
-    You are an autonomous AI Newsletter Agent.
+You are an autonomous AI Newsletter Agent.
 
-    Goal:
-    {state["goal"]}
+Goal:
+{state["goal"]}
 
-    Create a short practical execution plan with these steps:
-    1. Research latest AI agent news
-    2. Select top articles
-    3. Summarize articles
-    4. Generate newsletter
-    5. Review and improve
-    6. Simulate sending
+Create a short execution plan.
 
-    Keep it concise.
-    """
+Include:
+1. Research strategy
+2. Article selection
+3. Summarization
+4. HTML newsletter generation
+5. Self-review
+6. Simulated sending
+
+Keep it concise and professional.
+"""
 
     state["plan"] = call_llm(prompt)
     return state
 
+
 def human_review_node(state: NewsletterState) -> NewsletterState:
     """
-    Human-in-the-loop checkpoint.
-    Used only when mode='human'.
+    Human-in-the-loop is supported for terminal.
+    For Streamlit deployment, use Fully Autonomous mode.
     """
 
     print("\n==============================")
@@ -180,8 +219,7 @@ def human_review_node(state: NewsletterState) -> NewsletterState:
 
 def search_query_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 2: Creates a stable search query.
-    No LLM call here to save time.
+    Stable search query to avoid unnecessary LLM calls.
     """
 
     state["search_query"] = (
@@ -194,7 +232,7 @@ def search_query_node(state: NewsletterState) -> NewsletterState:
 
 def research_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 3: Uses Tavily web search.
+    Uses Tavily to search latest AI agent news.
     """
 
     query = state["search_query"]
@@ -228,10 +266,10 @@ def research_node(state: NewsletterState) -> NewsletterState:
             if article["title"] and article["url"] and article["content"]:
                 articles.append(article)
 
-            if not articles:
-                state["error"] = "No articles found during research."
-                state["raw_articles"] = []
-                return state
+        if not articles:
+            state["error"] = "No articles found during research."
+            state["raw_articles"] = []
+            return state
 
         state["raw_articles"] = articles
 
@@ -244,8 +282,7 @@ def research_node(state: NewsletterState) -> NewsletterState:
 
 def select_articles_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 4: Selects top 5 articles using Tavily score.
-    No LLM call here, so it is faster and free.
+    Select top 3 articles using Tavily relevance score.
     """
 
     if not state["raw_articles"]:
@@ -258,44 +295,43 @@ def select_articles_node(state: NewsletterState) -> NewsletterState:
         reverse=True
     )
 
-    state["selected_articles"] = sorted_articles[:5]
-
+    state["selected_articles"] = sorted_articles[:3]
     return state
 
 
 def summarize_articles_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 5: Summarizes all selected articles in one local LLM call.
+    Summarizes all selected articles in one LLM call.
     """
 
     articles_text = ""
 
     for index, article in enumerate(state["selected_articles"], start=1):
         articles_text += f"""
-            Article {index}
-            Title: {article["title"]}
-            URL: {article["url"]}
-            Published Date: {article.get("published_date", "")}
-            Content: {article["content"]}
-            """
+Article {index}
+Title: {article["title"]}
+URL: {article["url"]}
+Published Date: {article.get("published_date", "")}
+Content: {article["content"]}
+"""
 
     prompt = f"""
-            You are preparing a weekly newsletter about AI agents.
+You are preparing a weekly newsletter about AI agents.
 
-            Summarize the following articles.
+Summarize the following articles.
 
-            For each article, write:
-            - Title
-            - 2 sentence summary
-            - Why it matters
-            - Key takeaway
-            - Source URL
+For each article, write:
+- Title
+- 2 sentence summary
+- Why it matters
+- Key takeaway
+- Source URL
 
-            Keep it clear and professional.
+Keep the language simple, professional, and newsletter-friendly.
 
-            Articles:
-            {articles_text}
-            """
+Articles:
+{articles_text}
+"""
 
     state["summaries"] = call_llm(prompt)
     return state
@@ -303,65 +339,77 @@ def summarize_articles_node(state: NewsletterState) -> NewsletterState:
 
 def newsletter_writer_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 6: Generates HTML newsletter.
+    Generates clean HTML newsletter.
     """
 
     prompt = f"""
-    Create a clean HTML email newsletter.
+You are an HTML email newsletter generator.
 
-    Topic:
-    Latest AI Agent News
+Create a clean HTML email newsletter.
 
-    Goal:
-    {state["goal"]}
+Topic:
+Latest AI Agent News
 
-    Use this structure:
-    - Header
-    - Short introduction
-    - 5 news sections
-    - Each section should include title, summary, why it matters, key takeaway, source link
-    - Closing note
+Goal:
+{state["goal"]}
 
-    Rules:
-    - Use simple inline CSS
-    - Do not use JavaScript
-    - Keep it professional
-    - Return only valid HTML
+Use this structure:
+- Header
+- Short intro
+- 3 news sections
+- Each section must include title, summary, why it matters, key takeaway, source link
+- Closing note
 
-    Article summaries:
-    {state["summaries"]}
-    """
+Rules:
+- Output ONLY raw HTML.
+- Do NOT write explanations.
+- Do NOT write markdown.
+- Do NOT wrap in ```html.
+- First character must be <.
+- Use simple inline CSS.
+- Do not use JavaScript.
+
+Article summaries:
+{state["summaries"]}
+"""
 
     raw_html = call_llm(prompt)
     state["newsletter_draft"] = clean_html_output(raw_html)
+
     return state
 
 
 def critique_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 7: Self-review and improvement in one local LLM call.
+    Self-critique and improvement in one step.
     """
 
     prompt = f"""
-    You are an HTML email generator.
+You are an HTML email quality reviewer and editor.
 
-    Your task:
-    Review and improve the newsletter below.
+Review and improve the newsletter below.
 
-    Very important rules:
-    - Output ONLY raw HTML.
-    - Do NOT write explanations.
-    - Do NOT write "Here is the improved final HTML newsletter".
-    - Do NOT use markdown.
-    - Do NOT wrap the answer in ```html.
-    - The first character of your response must be <
-    - The last part of your response must be valid HTML.
+Check:
+1. Relevance to AI agents
+2. Clarity
+3. Professional tone
+4. Source links
+5. HTML readability
 
-    Newsletter:
-    {state["newsletter_draft"]}
-    """
+Very important:
+- Output ONLY the improved raw HTML.
+- Do NOT write "Here is the improved final HTML newsletter".
+- Do NOT write explanations.
+- Do NOT use markdown.
+- Do NOT wrap in ```html.
+- First character must be <.
 
-    state["critique"] = "Newsletter reviewed and improved by the local Ollama model."
+Newsletter:
+{state["newsletter_draft"]}
+"""
+
+    state["critique"] = "Newsletter reviewed and improved by the agent."
+
     raw_html = call_llm(prompt)
     state["final_newsletter"] = clean_html_output(raw_html)
 
@@ -369,18 +417,17 @@ def critique_node(state: NewsletterState) -> NewsletterState:
 
 
 def subject_line_node(state: NewsletterState) -> NewsletterState:
-    """
-    Step 8: Creates email subject line.
-    """
-
     prompt = f"""
-        Create one short professional subject line for this AI agent newsletter.
+Create one short professional email subject line for this AI agent newsletter.
 
-        Return only the subject line.
+Rules:
+- Return only the subject line.
+- Do not use quotes.
+- Maximum 12 words.
 
-        Newsletter:
-        {state["final_newsletter"][:1500]}
-        """
+Newsletter:
+{state["final_newsletter"][:1500]}
+"""
 
     subject = call_llm(prompt)
     state["subject_line"] = subject.strip().replace('"', "")
@@ -390,7 +437,8 @@ def subject_line_node(state: NewsletterState) -> NewsletterState:
 
 def output_node(state: NewsletterState) -> NewsletterState:
     """
-    Step 9: Simulates sending by saving HTML file.
+    Simulates sending by saving HTML file.
+    On Streamlit Cloud, writing to local temporary filesystem is allowed during runtime.
     """
 
     os.makedirs("outputs", exist_ok=True)
@@ -412,8 +460,10 @@ def output_node(state: NewsletterState) -> NewsletterState:
 
     return state
 
-#-------------------------------------6. Conditional Routing-----------------------------------------------------
 
+# -----------------------------
+# 7. Conditional Routing
+# -----------------------------
 
 def route_after_planning(state: NewsletterState) -> str:
     if state["mode"] == "human":
@@ -443,7 +493,9 @@ def route_after_selection(state: NewsletterState) -> str:
     return "summarize_articles"
 
 
-#-------------------------------------7. Build LangGraph-----------------------------------------------------
+# -----------------------------
+# 8. Build LangGraph
+# -----------------------------
 
 def build_newsletter_graph():
     graph = StateGraph(NewsletterState)
@@ -507,15 +559,18 @@ def build_newsletter_graph():
 
     return graph.compile()
 
-#-------------------------------------8. One Function Agent Runner-----------------------------------------------------
+
+# -----------------------------
+# 9. Runner
+# -----------------------------
 
 def run_newsletter_agent(goal: str, mode: str = "auto") -> NewsletterState:
     """
     One function call to run the full agent.
 
     mode:
-    - "auto"  = fully autonomous
-    - "human" = human-in-the-loop after planning
+    - auto: fully autonomous
+    - human: terminal-only human-in-the-loop
     """
 
     if mode not in ["auto", "human"]:
@@ -547,9 +602,6 @@ def run_newsletter_agent(goal: str, mode: str = "auto") -> NewsletterState:
     final_state = app.invoke(initial_state)
     return final_state
 
-
-
-#-------------------------------------9. Terminal Run-----------------------------------------------------
 
 if __name__ == "__main__":
     user_goal = "Create a weekly newsletter on latest AI agent news and send it to our subscribers."

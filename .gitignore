@@ -1,9 +1,35 @@
-__pycache__/
-outputs/
-.streamlit/secrets.toml
-.vscode/
-.ollama/
-models/
+# Environment variables
 .env
 .env.local
 .env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Generated outputs
+outputs/
+*.html
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# Editor
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.
+
+testGroq.py
+testTavily.py

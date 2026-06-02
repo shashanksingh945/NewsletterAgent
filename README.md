@@ -1,4 +1,4 @@
-# Autonomous AI Newsletter Agent using Ollama, LangGraph, Tavily, and Streamlit
+# Autonomous AI Newsletter Agent using Groq, LangGraph, Tavily, and Streamlit
 
 ## Project Overview
 
@@ -8,9 +8,25 @@ The agent receives a plain English goal:
 
 > Create a weekly newsletter on latest AI agent news and send it to our subscribers.
 
-After receiving the goal, the agent automatically performs research, selects relevant articles, summarizes them, generates a clean newsletter, reviews and improves its own output, and simulates sending by saving the newsletter as an HTML file.
+After receiving the goal, the agent automatically plans the task, researches the latest AI agent news, selects relevant articles, summarizes them, generates a clean HTML newsletter, reviews and improves its own output, and simulates sending by saving the newsletter as an HTML file.
 
-This project uses a local LLM through **Ollama**, which allows unlimited free local testing without depending on paid LLM APIs like Gemini, Grok, Claude, or OpenAI.
+This version is designed to be **deployable on Streamlit Cloud**. It uses **Groq API** as the cloud LLM provider instead of Ollama because Streamlit Cloud cannot run local Ollama models.
+
+---
+
+## Live Demo
+
+Streamlit App Link:
+
+```txt
+Add your Streamlit deployment link here
+```
+
+GitHub Repository:
+
+```txt
+https://github.com/shashanksingh945/NewsletterAgent
+```
 
 ---
 
@@ -35,13 +51,20 @@ The agent must autonomously:
 ## Tech Stack
 
 * Python
+* Streamlit
 * LangGraph
 * LangChain
-* Ollama
-* Llama 3.2 local model
+* Groq API
 * Tavily Search API
-* Streamlit
 * dotenv
+
+---
+
+## Why Groq is Used
+
+Initially, the project was tested with local Ollama and other LLM APIs. However, for Streamlit Cloud deployment, a cloud-based LLM is required.
+
+Ollama works locally because it runs on the user's machine, but Streamlit Cloud cannot access a local Ollama server. Therefore, this deployable version uses **Groq API** for LLM tasks such as planning, summarization, newsletter generation, critique, and improvement.
 
 ---
 
@@ -52,7 +75,7 @@ NewsletterAgent/
 │
 ├── agent.py
 ├── app.py
-├── testOllama.py
+├── testGroq.py
 ├── testTavily.py
 ├── requirements.txt
 ├── .env.example
@@ -86,58 +109,79 @@ Subject Line Node
    ↓
 Output Node
    ↓
-HTML newsletter saved inside outputs/
+HTML Newsletter Saved
 ```
 
 ---
 
-## Features
+## Main Features
 
 ### 1. Plain English Goal Input
 
-The agent accepts a goal like:
+The agent accepts a goal such as:
 
 ```txt
 Create a weekly newsletter on latest AI agent news and send it to our subscribers.
 ```
 
-### 2. Autonomous Workflow
+---
 
-The full workflow runs using one function:
+### 2. Fully Autonomous Workflow
+
+The complete workflow can be triggered using one function:
 
 ```python
 run_newsletter_agent(goal, mode="auto")
 ```
 
+---
+
 ### 3. Web Research Tool
 
-The project uses Tavily Search API to fetch latest AI agent news.
+The project uses **Tavily Search API** to fetch the latest AI agent news from the web.
 
-### 4. Local LLM
+---
 
-The project uses Ollama with:
+### 4. Cloud LLM using Groq
 
-```txt
-llama3.2:3b
-```
+The project uses Groq API for:
 
-This avoids API rate limits from Gemini or Grok.
+* Planning
+* Article summarization
+* Newsletter generation
+* Self-review
+* Newsletter improvement
+* Subject line generation
 
-### 5. Newsletter Generation
+---
+
+### 5. Article Selection
+
+The agent selects the most relevant articles based on Tavily search scores.
+
+---
+
+### 6. Newsletter Generation
 
 The final newsletter is generated in clean HTML format.
 
-### 6. Self-Critique
+---
 
-The agent reviews and improves its own newsletter before final output.
+### 7. Self-Critique and Improvement
 
-### 7. Simulated Sending
+The agent reviews the newsletter and improves it before final output.
 
-The newsletter is saved as an HTML file inside the `outputs/` folder.
+---
 
-### 8. Human-in-the-Loop Mode
+### 8. Simulated Sending
 
-The agent can pause after planning and ask for human approval before continuing.
+The project simulates sending by saving the final newsletter as an HTML file inside the `outputs/` folder.
+
+---
+
+### 9. Streamlit Frontend
+
+A simple Streamlit interface is provided to interact with the agent.
 
 ---
 
@@ -145,28 +189,67 @@ The agent can pause after planning and ask for human approval before continuing.
 
 ### Fully Autonomous Mode
 
-In Fully Autonomous mode, the agent completes the whole task by itself:
+In Fully Autonomous mode, the agent runs the entire process without asking for approval.
 
 ```txt
-Goal → Plan → Research → Summarize → Write → Review → Save Output
+Goal → Plan → Research → Summarize → Write → Review → Save
 ```
 
-Use this mode for Streamlit.
+This mode is recommended for Streamlit Cloud deployment.
+
+---
 
 ### Human-in-the-Loop Mode
 
 In Human-in-the-Loop mode, the agent creates a plan and waits for human approval before continuing.
 
-This mode is best used in the terminal because it uses `input()`.
+This mode is better for terminal execution because it uses terminal input.
 
 ---
 
-## Setup Instructions
+## Requirements
+
+Create a `requirements.txt` file with:
+
+```txt
+streamlit
+python-dotenv
+langchain
+langgraph
+langchain-groq
+langchain-tavily
+```
+
+---
+
+## Environment Variables
+
+For local development, create a `.env` file:
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+TAVILY_API_KEY=your_tavily_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+Do not upload `.env` to GitHub.
+
+Instead, upload `.env.example`:
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+TAVILY_API_KEY=your_tavily_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+---
+
+## Local Setup
 
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/NewsletterAgent.git
+git clone https://github.com/shashanksingh945/NewsletterAgent.git
 cd NewsletterAgent
 ```
 
@@ -194,88 +277,47 @@ pip install -r requirements.txt
 
 ---
 
-### Step 4: Install Ollama
+### Step 4: Add API Keys
 
-Download and install Ollama from:
-
-```txt
-https://ollama.com/download
-```
-
-After installation, check:
-
-```bash
-ollama --version
-```
-
----
-
-### Step 5: Pull Local Model
-
-```bash
-ollama pull llama3.2:3b
-```
-
-Test it:
-
-```bash
-ollama run llama3.2:3b
-```
-
-Then type:
-
-```txt
-Say hello
-```
-
-Exit using:
-
-```txt
-/bye
-```
-
----
-
-### Step 6: Create `.env` File
-
-Create a `.env` file in the project root.
+Create a `.env` file in the root folder:
 
 ```env
+GROQ_API_KEY=your_groq_api_key_here
 TAVILY_API_KEY=your_tavily_api_key_here
-OLLAMA_MODEL=llama3.2:3b
+GROQ_MODEL=llama-3.1-8b-instant
 ```
-
-Do not upload `.env` to GitHub.
 
 ---
 
 ## Testing
 
-### Test Ollama
+### Test Groq API
 
 ```bash
-python testOllama.py
+python testGroq.py
 ```
 
 Expected output:
 
 ```txt
-Hello! Nice to meet you.
+Hello! How can I help you today?
 ```
 
-### Test Tavily
+---
+
+### Test Tavily API
 
 ```bash
 python testTavily.py
 ```
 
-Expected output:
+Expected output should contain:
 
 ```txt
 <class 'dict'>
 ```
 
-The response should contain a `results` list.
+and the response should include a `results` list.
 
 ---
 
@@ -285,7 +327,7 @@ The response should contain a `results` list.
 python agent.py
 ```
 
-If successful, it will print:
+Expected output:
 
 ```txt
 Agent completed successfully.
@@ -295,7 +337,7 @@ Output file: outputs/weekly_ai_agent_newsletter_...
 
 ---
 
-## Run the Streamlit App
+## Run the Streamlit App Locally
 
 ```bash
 python -m streamlit run app.py
@@ -307,23 +349,76 @@ Then open:
 http://localhost:8501
 ```
 
-Use **Fully Autonomous** mode for Streamlit.
+---
+
+## Streamlit Cloud Deployment
+
+### Step 1: Push Code to GitHub
+
+```bash
+git add .
+git commit -m "Deployable Streamlit version using Groq"
+git push
+```
 
 ---
 
-## Output
+### Step 2: Create Streamlit Cloud App
 
-The generated newsletter is saved inside:
-
-```txt
-outputs/
-```
-
-Example:
+Go to:
 
 ```txt
-outputs/weekly_ai_agent_newsletter_2026_06_02_12_30_45.html
+https://share.streamlit.io/
 ```
+
+Then select:
+
+```txt
+Repository: shashanksingh945/NewsletterAgent
+Branch: main
+Main file path: app.py
+```
+
+---
+
+### Step 3: Add Streamlit Secrets
+
+In Streamlit Cloud:
+
+```txt
+App → Settings → Secrets
+```
+
+Add:
+
+```toml
+GROQ_API_KEY = "your_real_groq_api_key_here"
+TAVILY_API_KEY = "your_real_tavily_api_key_here"
+GROQ_MODEL = "llama-3.1-8b-instant"
+```
+
+---
+
+### Step 4: Deploy
+
+Click:
+
+```txt
+Deploy
+```
+
+After deployment, Streamlit will provide a public app URL.
+
+---
+
+## Important Notes
+
+* Do not upload `.env` to GitHub.
+* Use Streamlit Secrets for deployment.
+* `outputs/` is ignored because generated HTML files should not be committed.
+* Fully Autonomous mode is recommended for Streamlit Cloud.
+* Human-in-the-Loop mode is better for terminal use.
+* This deployable version uses Groq API instead of Ollama.
 
 ---
 
@@ -342,53 +437,39 @@ outputs/weekly_ai_agent_newsletter_2026_06_02_12_30_45.html
 | Human-in-the-loop toggle   | Done   |
 | One function call          | Done   |
 | Simple frontend            | Done   |
-| Local LLM using Ollama     | Done   |
+| Streamlit deployable       | Done   |
 
 ---
 
 ## Tools Used
 
-### Ollama
+### Groq API
 
-Used as the local LLM provider.
+Used as the LLM provider for planning, summarization, newsletter writing, critique, improvement, and subject line generation.
 
-Model used:
+### Tavily Search API
 
-```txt
-llama3.2:3b
-```
-
-### Tavily
-
-Used for real-time web search.
+Used for latest AI agent news research.
 
 ### LangGraph
 
-Used to create the multi-step agent workflow.
+Used to create the multi-step autonomous agent workflow.
 
 ### Streamlit
 
-Used to create a simple frontend for interacting with the agent.
-
----
-
-## Important Notes
-
-* Ollama runs locally on your machine.
-* Tavily is required only for web research.
-* `.env` should never be pushed to GitHub.
-* The `outputs/` folder is ignored because generated newsletters should not be committed.
-* Streamlit mode should use Fully Autonomous mode.
-* Human-in-the-Loop mode is better for terminal execution.
+Used to create the frontend interface and deploy the project online.
 
 ---
 
 ## Future Improvements
 
-* Add email sending using SMTP
+* Add real email sending using SMTP
 * Add subscriber database
-* Add newsletter scheduling
+* Add scheduled weekly newsletter generation
 * Add PDF export
 * Add better article ranking
 * Add support for multiple newsletter topics
-* Add admin dashboard for reviewing newsletters
+* Add admin review dashboard
+* Add analytics for newsletter performance
+
+
